@@ -62,6 +62,7 @@ struct Ctx {
     voice: Option<Voice>,
     schedule_destination: Option<PrimaryDestination>,
     stream_prefs: StreamPrefs,
+    spend_prefs: StreamPrefs,
     #[cfg(test)]
     setup_failure_replies: Arc<Mutex<Vec<String>>>,
     #[cfg(test)]
@@ -417,6 +418,7 @@ impl Gateway {
             audit,
             schedule_destination: None,
             stream_prefs: StreamPrefs::default(),
+            spend_prefs: StreamPrefs::default(),
             #[cfg(not(test))]
             voice: Voice::from_config(&cfg),
             #[cfg(test)]
@@ -605,10 +607,7 @@ impl Gateway {
                 continue;
             }
             if let Some((thread, target)) = self.channel.accept(m) {
-                let reply_with_voice = m
-                    .voice
-                    .as_ref()
-                    .is_some_and(|voice| !voice.agent_handoff);
+                let reply_with_voice = m.voice.as_ref().is_some_and(|voice| !voice.agent_handoff);
                 let message_text = match m.voice.as_ref() {
                     Some(voice) if voice.agent_handoff => {
                         let caption = m.text.trim();

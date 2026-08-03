@@ -12,7 +12,8 @@ use tracing::{error, info, warn};
 use crate::agent::{Request, RunError};
 use crate::history::{DeliveryStatus, OutboundMessage, OutboundOrigin};
 use crate::progress::{
-    append_progress_message, format_progress_block, ProgressEvent, ProgressPhase,
+    append_progress_message, format_progress_block, format_spend_message, ProgressEvent,
+    ProgressPhase,
 };
 use crate::prompt::{ComposedPrompt, Composer};
 use crate::voice::MAX_AUDIO_BYTES;
@@ -429,6 +430,16 @@ where
                     ),
                 );
                 return;
+            }
+            if ctx.spend_prefs.is_enabled(&job.thread) {
+                if let Some(usage) = out.last_usage {
+                    let body = format_spend_message(usage);
+                    let _ = tokio::time::timeout(
+                        Duration::from_secs(5),
+                        ctx.channel.send_progress(&job.target, &body),
+                    )
+                    .await;
+                }
             }
             let delivery = deliver_stored(ctx, &job, &outbound).await;
             if delivery.is_ok() {
@@ -915,8 +926,25 @@ fn command(ctx: &Ctx, job: &Job) -> Option<String> {
                 if enabled { "on" } else { "off" }
             ))
         }
+        "/live-spend" | "/live-spend on" | "/live-spend off" => {
+            let enabled = match text.as_str() {
+                "/live-spend on" => {
+                    ctx.spend_prefs.set(&job.thread, true);
+                    true
+                }
+                "/live-spend off" => {
+                    ctx.spend_prefs.set(&job.thread, false);
+                    false
+                }
+                _ => ctx.spend_prefs.toggle(&job.thread),
+            };
+            Some(format!(
+                "Live spend: {}.",
+                if enabled { "on" } else { "off" }
+            ))
+        }
         "/help" => Some(
-            "Commands:\n/clear - start a fresh conversation\n/stop - stop the active request\n/stream - toggle cosmetic tool progress\n/help - this message"
+            "Commands:\n/clear - start a fresh conversation\n/stop - stop the active request\n/stream - toggle cosmetic tool progress\n/live-spend - toggle token spend feedback\n/help - this message"
                 .to_string(),
         ),
         _ => None,

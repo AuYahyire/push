@@ -25,6 +25,8 @@ pub struct Request<'a> {
 pub struct RunOutput {
     pub reply: String,
     pub session_id: Option<String>,
+    /// Last assistant `usage` from Pi JSONL (tokens resent this turn), if any.
+    pub last_usage: Option<crate::progress::UsageSnapshot>,
 }
 
 /// What went wrong, separated so the gateway can phrase timeouts differently.
@@ -241,6 +243,7 @@ impl FakeRunner {
                 current_message.as_deref().unwrap_or(req.prompt)
             ),
             session_id: req.is_new.then(|| self.session_id.clone()),
+            last_usage: None,
         })
     }
 }

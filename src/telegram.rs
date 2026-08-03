@@ -315,7 +315,20 @@ impl Telegram {
     }
 
     pub async fn send_plain(&self, target: &str, text: &str) -> Result<()> {
-        self.send_plain_with_id(target, text).await.map(|_| ())
+        let mut payload = target_payload(target);
+        payload["text"] = json!(text);
+        let transport_response = self
+            .post_with_topic_fallback("sendMessage", payload)
+            .await?;
+        let response: ApiResponse<Value> = serde_json::from_value(transport_response.body)
+            .map_err(|_| anyhow::anyhow!("Telegram sendMessage returned an invalid response"))?;
+        if !response.ok {
+            bail!(
+                "Telegram sendMessage returned HTTP {}",
+                transport_response.status
+            );
+        }
+        Ok(())
     }
 
     pub async fn send_rich(&self, target: &str, text: &str) -> Result<()> {
@@ -469,9 +482,8 @@ impl Telegram {
         // ponytail: upgrade to a Transport::read_local hook if another channel needs it.
         let path = std::path::Path::new(&file_path);
         let bytes = if path.is_absolute() {
-            std::fs::read(path).with_context(|| {
-                format!("read local Telegram Bot API file {}", path.display())
-            })?
+            std::fs::read(path)
+                .with_context(|| format!("read local Telegram Bot API file {}", path.display()))?
         } else {
             self.transport.download(&self.token, &file_path).await?
         };
@@ -615,10 +627,7 @@ impl Update {
             };
         };
         let voice = inbound_audio_attachment(&message);
-        let text = message
-            .text
-            .or(message.caption)
-            .unwrap_or_default();
+        let text = message.text.or(message.caption).unwrap_or_default();
         RawMessage {
             row_id: self.update_id,
             provider_event_id: None,

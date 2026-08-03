@@ -227,6 +227,7 @@ fn setup_failure_ctx(
         schedule_destination: None,
         voice: None,
         stream_prefs: crate::progress::StreamPrefs::default(),
+        spend_prefs: crate::progress::StreamPrefs::default(),
         setup_failure_replies: Arc::new(Mutex::new(Vec::new())),
         sent_replies: Arc::new(Mutex::new(Vec::new())),
         sent_progress: Arc::new(Mutex::new(Vec::new())),

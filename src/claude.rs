@@ -128,12 +128,14 @@ impl Runner {
             Ok(r) => Ok(RunOutput {
                 reply: final_reply("claude", &r.result)?,
                 session_id: non_empty_session_id(&r.session_id).map(str::to_string),
+                last_usage: None,
             }),
             Err(_) => {
                 if out.status.success() {
                     Ok(RunOutput {
                         reply: final_reply("claude", &String::from_utf8_lossy(&out.stdout))?,
                         session_id: None,
+                        last_usage: None,
                     })
                 } else {
                     let message = String::from_utf8_lossy(&out.stderr).trim().to_string();

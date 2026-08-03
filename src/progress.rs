@@ -47,6 +47,59 @@ impl StreamPrefs {
     }
 }
 
+/// Per-conversation `/live-spend` toggle. Same shape as stream prefs (`StreamPrefs`).
+
+pub const SPEND_WARN_TOKENS: u64 = 12_000;
+pub const SPEND_SUGGEST_NEW_TOKENS: u64 = 20_000;
+pub const SPEND_CONTEXT_WINDOW: u64 = 131_072;
+
+/// Token usage for one assistant call (from Pi `message.usage`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct UsageSnapshot {
+    pub input: u64,
+    pub cache_read: u64,
+    pub output: u64,
+    pub total_tokens: u64,
+}
+
+impl UsageSnapshot {
+    /// Tokens effectively resent / held in context for this call.
+    pub fn ctx_tokens(self) -> u64 {
+        self.input.saturating_add(self.cache_read)
+    }
+}
+
+/// Cosmetic spend line for Telegram (not stored in canonical history).
+pub fn format_spend_message(usage: UsageSnapshot) -> String {
+    let ctx = usage.ctx_tokens();
+    let pct = if SPEND_CONTEXT_WINDOW == 0 {
+        0
+    } else {
+        (ctx * 100) / SPEND_CONTEXT_WINDOW
+    };
+    let mut lines = vec![format!(
+        "spend: {} ctx · {} out · {}% of {}k",
+        format_k(ctx),
+        format_k(usage.output),
+        pct,
+        SPEND_CONTEXT_WINDOW / 1000
+    )];
+    if ctx >= SPEND_SUGGEST_NEW_TOKENS {
+        lines.push("⚠️ past threshold — use /new".to_string());
+    } else if ctx >= SPEND_WARN_TOKENS {
+        lines.push("🟠 context growing — consider /new soon".to_string());
+    }
+    lines.join("\n")
+}
+
+fn format_k(n: u64) -> String {
+    if n >= 1000 {
+        format!("{:.1}k", n as f64 / 1000.0)
+    } else {
+        n.to_string()
+    }
+}
+
 const PREVIEW_MAX: usize = 120;
 const PROGRESS_MESSAGE_MAX: usize = 3500;
 
@@ -189,6 +242,26 @@ mod tests {
         assert!(prefs.is_enabled("telegram:dm:1"));
         prefs.set("telegram:dm:1", false);
         assert!(!prefs.is_enabled("telegram:dm:1"));
+    }
+
+    #[test]
+    fn spend_message_warns_and_suggests_new() {
+        let mild = format_spend_message(UsageSnapshot {
+            input: 5_000,
+            cache_read: 8_000,
+            output: 200,
+            total_tokens: 13_200,
+        });
+        assert!(mild.contains("13.0k ctx"));
+        assert!(mild.contains("consider /new"));
+
+        let hot = format_spend_message(UsageSnapshot {
+            input: 10_000,
+            cache_read: 15_000,
+            output: 100,
+            total_tokens: 25_100,
+        });
+        assert!(hot.contains("use /new"));
     }
 
     #[test]

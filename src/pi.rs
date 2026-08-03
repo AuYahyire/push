@@ -9,7 +9,7 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 
 use crate::agent::{final_reply, Request, RunError, RunOutput};
-use crate::progress::{preview_from_args, ProgressEvent, ProgressPhase};
+use crate::progress::{preview_from_args, ProgressEvent, ProgressPhase, UsageSnapshot};
 
 /// Runner invokes `pi` in non-interactive JSON event mode.
 pub struct Runner {
@@ -118,6 +118,7 @@ impl Runner {
         Ok(RunOutput {
             reply: final_reply("pi", &reply)?,
             session_id: req.is_new.then_some(out.parsed.session_id).flatten(),
+            last_usage: out.parsed.last_usage,
         })
     }
 
@@ -227,6 +228,7 @@ struct ParsedOutput {
     session_id: Option<String>,
     reply: Option<String>,
     assistant_failed: bool,
+    last_usage: Option<UsageSnapshot>,
 }
 
 fn apply_jsonl_line(
@@ -271,6 +273,17 @@ fn apply_jsonl_line(
                 .join("");
             parsed.reply = Some(text);
             parsed.assistant_failed = false;
+            if let Some(usage) = message.get("usage") {
+                parsed.last_usage = Some(UsageSnapshot {
+                    input: usage.get("input").and_then(Value::as_u64).unwrap_or(0),
+                    cache_read: usage.get("cacheRead").and_then(Value::as_u64).unwrap_or(0),
+                    output: usage.get("output").and_then(Value::as_u64).unwrap_or(0),
+                    total_tokens: usage
+                        .get("totalTokens")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0),
+                });
+            }
         }
         Some("tool_execution_start") => {
             if let Some(tx) = progress {
@@ -341,7 +354,40 @@ pub fn discard_session(session_id: &str) -> usize {
     let Some(id) = safe_session_file_id(session_id) else {
         return 0;
     };
-    discard_session_under(&sessions_root(), id)
+    let removed = discard_session_under(&sessions_root(), id);
+    discard_tool_blobs(id);
+    removed
+}
+
+fn tool_blobs_root() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("PI_CODING_AGENT_DIR") {
+        if !dir.trim().is_empty() {
+            return std::path::PathBuf::from(dir).join("tool-blobs");
+        }
+    }
+    match std::env::var_os("HOME") {
+        Some(home) => std::path::PathBuf::from(home).join(".pi/agent/tool-blobs"),
+        None => std::path::PathBuf::from(".pi/agent/tool-blobs"),
+    }
+}
+
+fn discard_tool_blobs(session_id: &str) {
+    let safe: String = session_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    if safe.is_empty() {
+        return;
+    }
+    let dir = tool_blobs_root().join(&safe);
+    let _ = std::fs::remove_dir_all(dir);
 }
 
 fn safe_session_file_id(session_id: &str) -> Option<&str> {
