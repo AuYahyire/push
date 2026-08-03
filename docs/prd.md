@@ -169,6 +169,8 @@ user prompt.
 ## Control Commands
 
 - `/clear`, `/new`, `/reset`: rotate the current backend session.
+  For Pi, also delete the abandoned session JSONL under `~/.pi/agent/sessions`
+  (best-effort; missing files are ignored).
 - `/stream`, `/stream on`, `/stream off`: toggle cosmetic tool-progress
   messages for the current conversation (in-memory; off after restart). Progress
   is never stored in canonical history and does not change agent prompts.
